@@ -15,9 +15,15 @@ concurrency:
   group: "pages"
   cancel-in-progress: false
 
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+  # If you temporarily need to bypass lint/types in CI, uncomment these:
+  # NEXT_DISABLE_ESLINT: 1
+
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,7 +31,11 @@ jobs:
       - name: Detect package manager
         id: pm
         run: |
-          if [ -f "${{ github.workspace }}/yarn.lock" ]; then
+          if [ -f "${{ github.workspace }}/pnpm-lock.yaml" ]; then
+            echo "manager=pnpm" >> $GITHUB_OUTPUT
+            echo "install=install --frozen-lockfile" >> $GITHUB_OUTPUT
+            echo "runner=pnpm" >> $GITHUB_OUTPUT
+          elif [ -f "${{ github.workspace }}/yarn.lock" ]; then
             echo "manager=yarn" >> $GITHUB_OUTPUT
             echo "install=install --frozen-lockfile" >> $GITHUB_OUTPUT
             echo "runner=yarn" >> $GITHUB_OUTPUT
@@ -41,15 +51,21 @@ jobs:
           node-version: "20"
           cache: ${{ steps.pm.outputs.manager }}
 
-      - name: Restore cache
+      - name: Setup pnpm (if used)
+        if: ${{ steps.pm.outputs.manager == 'pnpm' }}
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Restore Next cache
         uses: actions/cache@v4
         with:
           path: .next/cache
-          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json', '**/yarn.lock') }}-${{ hashFiles('**/*.[jt]s', '**/*.[jt]sx', '**/*.mdx') }}
+          key: ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json', '**/yarn.lock', '**/pnpm-lock.yaml') }}-${{ hashFiles('**/*.[jt]s', '**/*.[jt]sx', '**/*.mdx', '**/*.scss') }}
           restore-keys: |
-            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json', '**/yarn.lock') }}-
+            ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json', '**/yarn.lock', '**/pnpm-lock.yaml') }}-
 
-      - name: Install deps
+      - name: Install dependencies
         run: ${{ steps.pm.outputs.manager }} ${{ steps.pm.outputs.install }}
 
       - name: Build
@@ -58,7 +74,7 @@ jobs:
       - name: Export static site
         run: ${{ steps.pm.outputs.runner }} next export
 
-      - name: Add .nojekyll
+      - name: Disable Jekyll
         run: touch out/.nojekyll
 
       - name: Upload artifact
